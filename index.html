@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nifty 50 - Stocks Above 10 Day SMA</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Nifty 50 Stock Analysis</h1>
+            <p class="subtitle">Stocks Trading Above 10-Day SMA</p>
+        </header>
+
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-value" id="aboveCount">-</div>
+                <div class="stat-label">Above SMA</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="belowCount">-</div>
+                <div class="stat-label">Below SMA</div>
+            </div>
+            <div class="stat-card percentage">
+                <div class="stat-value" id="percentageAbove">-%</div>
+                <div class="stat-label">Percentage Above</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="refreshBtn" class="btn-refresh">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+                Refresh Data
+            </button>
+        </div>
+
+        <div class="stocks-list-card">
+            <h2>📊 Stocks Being Analyzed</h2>
+            <div class="stocks-badges" id="stocksBadges">
+                <div class="loading-small">Loading stocks list...</div>
+            </div>
+        </div>
+
+        <div class="recommended-section">
+            <h2>⭐ Recommended Buy Zone Stocks</h2>
+            <p class="recommended-subtitle">Stocks showing strong buy signals based on Supertrend & SMA indicators</p>
+            <div class="recommended-grid" id="recommendedGrid">
+                <div class="loading-small">Analyzing stocks...</div>
+            </div>
+        </div>
+
+        <div class="section-header">
+            <h2>📈 Stock Details</h2>
+        </div>
+
+        <div class="stocks-grid" id="stocksGrid">
+            <div class="loading">Loading stock data...</div>
+        </div>
+
+        <footer>
+            <p>Last Updated: <span id="lastUpdate">-</span></p>
+            <p class="disclaimer">Data is fetched from Yahoo Finance API. This is for educational purposes only.</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
