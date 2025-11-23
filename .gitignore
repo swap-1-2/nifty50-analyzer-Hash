@@ -2,3 +2,7 @@ node_modules/
 .env
 .DS_Store
 *.log
+ACCESS_TOKEN_GUIDE.md
+ZERODHA_SETUP.md
+get-access-token.js
+fetch-instrument-tokens.js

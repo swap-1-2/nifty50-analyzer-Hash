@@ -1,6 +1,10 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF ."
+
+[build.environment]
+  SECRETS_SCAN_OMIT_PATHS = "ACCESS_TOKEN_GUIDE.md,ZERODHA_SETUP.md,get-access-token.js,fetch-instrument-tokens.js"
 
 [[redirects]]
   from = "/api/stock/:symbol"
