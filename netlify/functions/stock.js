@@ -161,12 +161,57 @@ exports.handler = async (event, context) => {
 
         // Try Zerodha first
         let data;
+        let source = 'zerodha';
+        
         try {
-            data = await getKiteHistoricalData(symbol);
+            const zerodhaData = await getKiteHistoricalData(symbol);
             console.log(`[ZERODHA] Successfully fetched ${symbol}`);
+            
+            // Convert Zerodha format to Yahoo Finance format for compatibility
+            const timestamps = zerodhaData.map(item => Math.floor(new Date(item.date).getTime() / 1000));
+            const quotes = {
+                open: zerodhaData.map(item => item.open),
+                high: zerodhaData.map(item => item.high),
+                low: zerodhaData.map(item => item.low),
+                close: zerodhaData.map(item => item.close),
+                volume: zerodhaData.map(item => item.volume)
+            };
+            
+            data = {
+                chart: {
+                    result: [{
+                        timestamp: timestamps,
+                        indicators: {
+                            quote: [quotes]
+                        }
+                    }]
+                }
+            };
         } catch (zerodhaError) {
             console.log(`[ZERODHA] Failed for ${symbol}, trying Yahoo Finance...`);
-            data = await getYahooFinanceData(symbol);
+            source = 'yahoo';
+            const yahooData = await getYahooFinanceData(symbol);
+            
+            // Yahoo data is already in the correct format
+            const timestamps = yahooData.map(item => Math.floor(new Date(item.date).getTime() / 1000));
+            const quotes = {
+                open: yahooData.map(item => item.open),
+                high: yahooData.map(item => item.high),
+                low: yahooData.map(item => item.low),
+                close: yahooData.map(item => item.close),
+                volume: yahooData.map(item => item.volume)
+            };
+            
+            data = {
+                chart: {
+                    result: [{
+                        timestamp: timestamps,
+                        indicators: {
+                            quote: [quotes]
+                        }
+                    }]
+                }
+            };
             console.log(`[YAHOO] Successfully fetched ${symbol}`);
         }
 
