@@ -1,6 +1,15 @@
 const axios = require('axios');
 const KiteConnect = require('kiteconnect').KiteConnect;
 
+// Debug: Log environment variables (without exposing full values)
+console.log('[NETLIFY FUNCTION] Environment check:', {
+    hasApiKey: !!process.env.KITE_API_KEY,
+    hasApiSecret: !!process.env.KITE_API_SECRET,
+    hasAccessToken: !!process.env.KITE_ACCESS_TOKEN,
+    apiKeyLength: process.env.KITE_API_KEY?.length,
+    accessTokenLength: process.env.KITE_ACCESS_TOKEN?.length
+});
+
 // Initialize Kite Connect
 const kite = new KiteConnect({
     api_key: process.env.KITE_API_KEY
@@ -9,6 +18,9 @@ const kite = new KiteConnect({
 // Set access token
 if (process.env.KITE_ACCESS_TOKEN) {
     kite.setAccessToken(process.env.KITE_ACCESS_TOKEN);
+    console.log('[NETLIFY FUNCTION] Access token set successfully');
+} else {
+    console.error('[NETLIFY FUNCTION] WARNING: No access token found in environment variables');
 }
 
 // Instrument tokens mapping
@@ -68,14 +80,20 @@ const instrumentTokens = {
 // Fetch data from Zerodha
 async function getKiteHistoricalData(symbol) {
     try {
+        console.log(`[ZERODHA] Attempting to fetch ${symbol}`);
+        
         const instrumentToken = instrumentTokens[symbol];
         if (!instrumentToken) {
             throw new Error(`Instrument token not found for ${symbol}`);
         }
+        
+        console.log(`[ZERODHA] Instrument token for ${symbol}: ${instrumentToken}`);
 
         const toDate = new Date();
         const fromDate = new Date();
         fromDate.setDate(fromDate.getDate() - 150);
+        
+        console.log(`[ZERODHA] Date range: ${fromDate.toISOString().split('T')[0]} to ${toDate.toISOString().split('T')[0]}`);
 
         const data = await kite.getHistoricalData(
             instrumentToken,
@@ -83,10 +101,13 @@ async function getKiteHistoricalData(symbol) {
             fromDate.toISOString().split('T')[0],
             toDate.toISOString().split('T')[0]
         );
+        
+        console.log(`[ZERODHA] Successfully fetched ${data.length} days of data for ${symbol}`);
 
         return data;
     } catch (error) {
         console.error(`[ZERODHA] Error for ${symbol}:`, error.message);
+        console.error(`[ZERODHA] Error details:`, JSON.stringify(error, null, 2));
         throw error;
     }
 }
