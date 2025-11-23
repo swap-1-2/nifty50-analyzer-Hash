@@ -1,5 +1,6 @@
 // Array to store fetched stock data
 let stocksData = [];
+let niftyIndexData = null;
 
 // Nifty 50 stocks list (Updated November 2025)
 const nifty50Stocks = [
@@ -186,6 +187,128 @@ function calculateSupertrend(highPrices, lowPrices, closePrices, period = 10, mu
     };
 }
 
+// Calculate CCI (Commodity Channel Index)
+function calculateCCI(highPrices, lowPrices, closePrices, period = 20) {
+    if (highPrices.length < period) return 0;
+    
+    // Get the last N periods
+    const recentHighs = highPrices.slice(-period);
+    const recentLows = lowPrices.slice(-period);
+    const recentCloses = closePrices.slice(-period);
+    
+    // Calculate Typical Price (TP) for each period: (High + Low + Close) / 3
+    const typicalPrices = [];
+    for (let i = 0; i < period; i++) {
+        typicalPrices.push((recentHighs[i] + recentLows[i] + recentCloses[i]) / 3);
+    }
+    
+    // Today's Typical Price
+    const tpToday = typicalPrices[typicalPrices.length - 1];
+    
+    // SMA of Typical Prices
+    const smaTP = typicalPrices.reduce((sum, tp) => sum + tp, 0) / period;
+    
+    // Mean Absolute Deviation (MAD)
+    const deviations = typicalPrices.map(tp => Math.abs(tp - smaTP));
+    const mad = deviations.reduce((sum, dev) => sum + dev, 0) / period;
+    
+    // CCI Formula: (TP - SMA) / (0.015 * MAD)
+    const cci = mad === 0 ? 0 : (tpToday - smaTP) / (0.015 * mad);
+    
+    return cci;
+}
+
+// Calculate RSI (Relative Strength Index)
+function calculateRSI(closePrices, period = 14) {
+    if (closePrices.length < period + 1) return { value: 0, trend: 0 };
+    
+    // Calculate price changes
+    const changes = [];
+    for (let i = 1; i < closePrices.length; i++) {
+        changes.push(closePrices[i] - closePrices[i - 1]);
+    }
+    
+    // Separate gains and losses
+    const gains = changes.map(change => change > 0 ? change : 0);
+    const losses = changes.map(change => change < 0 ? Math.abs(change) : 0);
+    
+    // Calculate initial average gain and loss (first RSI)
+    let avgGain = gains.slice(0, period).reduce((sum, gain) => sum + gain, 0) / period;
+    let avgLoss = losses.slice(0, period).reduce((sum, loss) => sum + loss, 0) / period;
+    
+    // Calculate subsequent RSI values using smoothed averages
+    const rsiValues = [];
+    for (let i = period; i < changes.length; i++) {
+        avgGain = ((avgGain * (period - 1)) + gains[i]) / period;
+        avgLoss = ((avgLoss * (period - 1)) + losses[i]) / period;
+        
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        const rsi = 100 - (100 / (1 + rs));
+        rsiValues.push(rsi);
+    }
+    
+    // Get current RSI
+    const currentRSI = rsiValues[rsiValues.length - 1] || 50;
+    
+    // Calculate RSI trend (consecutive days rising/falling)
+    let rsiTrend = 0;
+    if (rsiValues.length > 1) {
+        // Check recent trend
+        for (let i = rsiValues.length - 1; i > 0; i--) {
+            if (i === rsiValues.length - 1) {
+                rsiTrend = rsiValues[i] > rsiValues[i - 1] ? 1 : -1;
+            } else {
+                if ((rsiTrend > 0 && rsiValues[i] > rsiValues[i - 1]) ||
+                    (rsiTrend < 0 && rsiValues[i] < rsiValues[i - 1])) {
+                    rsiTrend += rsiTrend > 0 ? 1 : -1;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    
+    return {
+        value: currentRSI,
+        trend: rsiTrend
+    };
+}
+
+// Detect crossover events with date information
+function detectCrossovers(prices, sma10, sma20, prevPrices, prevSMA10, prevSMA20, currentDate, prevDate) {
+    const crossovers = {
+        sma10: null,  // 'above', 'below', or null
+        sma20: null,
+        sma10Date: null,  // Date when SMA10 crossover occurred
+        sma20Date: null   // Date when SMA20 crossover occurred
+    };
+    
+    if (prevPrices && prevPrices.length >= 2 && prevSMA10 && prevSMA20) {
+        const currentPrice = prices[prices.length - 1];
+        const prevPrice = prevPrices[prevPrices.length - 1];
+        
+        // Check SMA10 crossover
+        if (prevPrice <= prevSMA10 && currentPrice > sma10) {
+            crossovers.sma10 = 'above';
+            crossovers.sma10Date = currentDate;
+        } else if (prevPrice >= prevSMA10 && currentPrice < sma10) {
+            crossovers.sma10 = 'below';
+            crossovers.sma10Date = currentDate;
+        }
+        
+        // Check SMA20 crossover
+        if (prevPrice <= prevSMA20 && currentPrice > sma20) {
+            crossovers.sma20 = 'above';
+            crossovers.sma20Date = currentDate;
+        } else if (prevPrice >= prevSMA20 && currentPrice < sma20) {
+            crossovers.sma20 = 'below';
+            crossovers.sma20Date = currentDate;
+        }
+    }
+    
+    return crossovers;
+}
+
 // Fetch stock data from Yahoo Finance API via proxy
 async function fetchStockData(symbol) {
     try {
@@ -231,6 +354,15 @@ async function fetchStockData(symbol) {
                 year: 'numeric' 
             });
             
+            // Get previous day's entry for crossover date tracking
+            const prevEntry = validEntries[validEntries.length - 2];
+            const prevDate = prevEntry ? prevEntry.date : lastDate;
+            const prevDateStr = prevDate.toLocaleDateString('en-IN', { 
+                day: '2-digit', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+            
             // Calculate all SMAs
             const allPrices = validEntries.map(e => e.price);
             const allHighPrices = validEntries.map(e => e.high);
@@ -241,16 +373,30 @@ async function fetchStockData(symbol) {
             const sma50 = calculateSMA(allPrices.slice(-50), 50);
             const sma100 = calculateSMA(allPrices.slice(-100), 100);
             
+            // Get previous day's data for crossover detection
+            const prevPrices = allPrices.slice(0, -1);
+            const prevSMA10 = prevPrices.length >= 10 ? calculateSMA(prevPrices.slice(-10), 10) : sma10;
+            const prevSMA20 = prevPrices.length >= 20 ? calculateSMA(prevPrices.slice(-20), 20) : sma20;
+            
+            // Detect crossovers with date information
+            const crossovers = detectCrossovers(allPrices, sma10, sma20, prevPrices, prevSMA10, prevSMA20, dateStr, prevDateStr);
+            
             // Calculate Supertrend (10, 2)
             const supertrend = calculateSupertrend(allHighPrices, allLowPrices, allPrices, 10, 2);
             
-            // Calculate gap percentages
-            const gap10 = ((lastClosedPrice - sma10) / sma10 * 100);
-            const gap20 = ((lastClosedPrice - sma20) / sma20 * 100);
-            const gap50 = ((lastClosedPrice - sma50) / sma50 * 100);
-            const gap100 = ((lastClosedPrice - sma100) / sma100 * 100);
+            // Calculate CCI (20)
+            const cci = calculateCCI(allHighPrices, allLowPrices, allPrices, 20);
             
-            console.log(`${symbol}: Price=₹${lastClosedPrice.toFixed(2)} | ST(10,2)=₹${supertrend.value.toFixed(2)} [${supertrend.trend.toUpperCase()}] | SMA10=₹${sma10.toFixed(2)}`);
+            // Calculate RSI (14)
+            const rsi = calculateRSI(allPrices, 14);
+            
+            // Calculate gap percentages (with validation to prevent Infinity)
+            const gap10 = sma10 && sma10 !== 0 ? ((lastClosedPrice - sma10) / sma10 * 100) : 0;
+            const gap20 = sma20 && sma20 !== 0 ? ((lastClosedPrice - sma20) / sma20 * 100) : 0;
+            const gap50 = sma50 && sma50 !== 0 ? ((lastClosedPrice - sma50) / sma50 * 100) : 0;
+            const gap100 = sma100 && sma100 !== 0 ? ((lastClosedPrice - sma100) / sma100 * 100) : 0;
+            
+            console.log(`${symbol}: Price=₹${lastClosedPrice.toFixed(2)} | ST(10,2)=₹${supertrend.value.toFixed(2)} [${supertrend.trend.toUpperCase()}] | RSI(14)=${rsi.value.toFixed(1)} | CCI(20)=${cci.toFixed(2)} | SMA10=₹${sma10.toFixed(2)} | SMA20=₹${sma20.toFixed(2)}`);
             
             return {
                 symbol: symbol,
@@ -267,6 +413,13 @@ async function fetchStockData(symbol) {
                 supertrend: supertrend.value,
                 supertrendTrend: supertrend.trend,
                 aboveSupertrend: supertrend.trend === 'up',
+                cci: cci,
+                rsi: rsi.value,
+                rsiTrend: rsi.trend,
+                crossoverSMA10: crossovers.sma10,
+                crossoverSMA20: crossovers.sma20,
+                crossoverSMA10Date: crossovers.sma10Date,
+                crossoverSMA20Date: crossovers.sma20Date,
                 aboveSMA10: lastClosedPrice > sma10,
                 aboveSMA20: lastClosedPrice > sma20,
                 aboveSMA50: lastClosedPrice > sma50,
@@ -281,17 +434,28 @@ async function fetchStockData(symbol) {
     }
 }
 
-// Fetch all stocks data with rate limiting
+// Fetch all stocks and update UI
 async function fetchAllStocks() {
     const refreshBtn = document.getElementById('refreshBtn');
     const stocksGrid = document.getElementById('stocksGrid');
     
     refreshBtn.disabled = true;
-    stocksGrid.innerHTML = '<div class="loading">Fetching stock data...</div>';
+    stocksGrid.innerHTML = '<div class="loading">Fetching Nifty Index and stock data...</div>';
     
     stocksData = [];
     
-    // Fetch in batches to avoid rate limiting
+    // First fetch Nifty Index data
+    try {
+        niftyIndexData = await fetchStockData('^NSEI');
+        if (niftyIndexData) {
+            niftyIndexData.name = 'NIFTY 50';
+            console.log('✅ Nifty Index data fetched successfully');
+        }
+    } catch (error) {
+        console.error('❌ Failed to fetch Nifty Index:', error);
+    }
+    
+    // Then fetch in batches to avoid rate limiting
     const batchSize = 5;
     for (let i = 0; i < nifty50Stocks.length; i += batchSize) {
         const batch = nifty50Stocks.slice(i, i + batchSize);
@@ -364,6 +528,52 @@ function updateUI() {
     });
     
     stocksGrid.innerHTML = `
+        ${niftyIndexData ? `
+        <div class="nifty-index-card">
+            <h2>📈 NIFTY 50 INDEX</h2>
+            <div class="nifty-main-info">
+                <div class="nifty-price-section">
+                    <span class="nifty-label">Current Level</span>
+                    <span class="nifty-price">₹${niftyIndexData.currentPrice.toFixed(2)}</span>
+                </div>
+                <div class="nifty-indicators-section">
+                    <div class="nifty-indicator">
+                        <span class="supertrend-badge ${niftyIndexData.supertrendTrend === 'up' ? 'up' : 'down'}">
+                            ST: ${niftyIndexData.supertrendTrend === 'up' ? '📈' : '📉'} ₹${niftyIndexData.supertrend.toFixed(2)}
+                        </span>
+                        <span class="cci-badge ${niftyIndexData.cci > 100 ? 'overbought' : niftyIndexData.cci < -100 ? 'oversold' : 'neutral'}">
+                            CCI: ${niftyIndexData.cci.toFixed(0)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="nifty-sma-grid">
+                <div class="nifty-sma-item ${niftyIndexData.aboveSMA10 ? 'above' : 'below'}">
+                    <span class="sma-label">SMA 10</span>
+                    <span class="sma-value">₹${niftyIndexData.sma10.toFixed(2)}</span>
+                    <span class="sma-gap ${niftyIndexData.gap10 >= 0 ? 'positive' : 'negative'}">${niftyIndexData.gap10 >= 0 ? '+' : ''}${niftyIndexData.gap10.toFixed(2)}%</span>
+                </div>
+                <div class="nifty-sma-item ${niftyIndexData.aboveSMA20 ? 'above' : 'below'}">
+                    <span class="sma-label">SMA 20</span>
+                    <span class="sma-value">₹${niftyIndexData.sma20.toFixed(2)}</span>
+                    <span class="sma-gap ${niftyIndexData.gap20 >= 0 ? 'positive' : 'negative'}">${niftyIndexData.gap20 >= 0 ? '+' : ''}${niftyIndexData.gap20.toFixed(2)}%</span>
+                </div>
+                <div class="nifty-sma-item ${niftyIndexData.aboveSMA50 ? 'above' : 'below'}">
+                    <span class="sma-label">SMA 50</span>
+                    <span class="sma-value">₹${niftyIndexData.sma50.toFixed(2)}</span>
+                    <span class="sma-gap ${niftyIndexData.gap50 >= 0 ? 'positive' : 'negative'}">${niftyIndexData.gap50 >= 0 ? '+' : ''}${niftyIndexData.gap50.toFixed(2)}%</span>
+                </div>
+                <div class="nifty-sma-item ${niftyIndexData.aboveSMA100 ? 'above' : 'below'}">
+                    <span class="sma-label">SMA 100</span>
+                    <span class="sma-value">₹${niftyIndexData.sma100.toFixed(2)}</span>
+                    <span class="sma-gap ${niftyIndexData.gap100 >= 0 ? 'positive' : 'negative'}">${niftyIndexData.gap100 >= 0 ? '+' : ''}${niftyIndexData.gap100.toFixed(2)}%</span>
+                </div>
+            </div>
+            <div class="nifty-date">As of: ${niftyIndexData.lastDate}</div>
+        </div>
+        ` : ''}
+        
+        <h2 style="margin: 30px 0 20px 0; color: #2d3748;">📊 Individual Stock Analysis</h2>
         <div class="sma-summary-grid">
             <div class="sma-summary-card">
                 <h3>SMA 10</h3>
@@ -401,6 +611,11 @@ function updateUI() {
         <div class="stocks-detail-grid">
         ${sortedStocks.map(stock => `
             <div class="stock-card ${stock.aboveSMA10 ? 'above' : 'below'}">
+                ${stock.crossoverSMA10 || stock.crossoverSMA20 ? `
+                <div class="crossover-alert ${stock.crossoverSMA10 === 'above' || stock.crossoverSMA20 === 'above' ? 'bullish' : 'bearish'}">
+                    🔔 ${stock.crossoverSMA10 ? `Crossed ${stock.crossoverSMA10.toUpperCase()} SMA10 on ${stock.crossoverSMA10Date}` : ''}${stock.crossoverSMA10 && stock.crossoverSMA20 ? ' & ' : ''}${stock.crossoverSMA20 ? `Crossed ${stock.crossoverSMA20.toUpperCase()} SMA20 on ${stock.crossoverSMA20Date}` : ''}
+                </div>
+                ` : ''}
                 <div class="stock-name">${stock.name}</div>
                 <div class="stock-info">
                     <span class="stock-price">₹${stock.currentPrice.toFixed(2)}</span>
@@ -408,6 +623,12 @@ function updateUI() {
                 <div class="supertrend-indicator">
                     <span class="supertrend-badge ${stock.supertrendTrend === 'up' ? 'up' : 'down'}" title="Supertrend(10,2): ₹${stock.supertrend.toFixed(2)}">
                         ST: ${stock.supertrendTrend === 'up' ? '📈' : '📉'} ₹${stock.supertrend.toFixed(2)}
+                    </span>
+                    <span class="cci-badge ${stock.cci > 100 ? 'overbought' : stock.cci < -100 ? 'oversold' : 'neutral'}" title="CCI(20): Commodity Channel Index">
+                        CCI: ${stock.cci.toFixed(0)}
+                    </span>
+                    <span class="rsi-badge ${stock.rsi > 70 ? 'overbought' : stock.rsi < 30 ? 'oversold' : 'neutral'}" title="RSI(14): ${stock.rsiTrend > 0 ? `Rising ${stock.rsiTrend} days` : stock.rsiTrend < 0 ? `Falling ${Math.abs(stock.rsiTrend)} days` : 'Flat'}">
+                        RSI: ${stock.rsi.toFixed(0)}
                     </span>
                 </div>
                 <div class="sma-indicators">
@@ -426,6 +647,7 @@ function updateUI() {
     
     // Update recommended stocks section
     updateRecommendedStocks();
+    updateSellZoneStocks();
 }
 
 // Function to identify and display recommended stocks in buy zone
@@ -440,20 +662,18 @@ function updateRecommendedStocks() {
     // Criteria for buy zone:
     // 1. Supertrend = UP (price above supertrend)
     // 2. Price above SMA 10, 20, and 50
-    // 3. Preferably above SMA 100 too
+    // 3. CCI < -100 (oversold) OR CCI between -100 to 0 (recovering from oversold)
+    // 4. Preferably above SMA 100 too
     
     const buyZoneStocks = stocksData.filter(stock => {
         return stock.supertrendTrend === 'up' && 
                stock.aboveSMA10 && 
                stock.aboveSMA20 && 
-               stock.aboveSMA50;
+               stock.aboveSMA50 &&
+               stock.cci < 50; // CCI not overbought
     }).sort((a, b) => {
-        // Sort by number of SMAs above (more is better)
-        const aScore = (a.aboveSMA10 ? 1 : 0) + (a.aboveSMA20 ? 1 : 0) + 
-                      (a.aboveSMA50 ? 1 : 0) + (a.aboveSMA100 ? 1 : 0);
-        const bScore = (b.aboveSMA10 ? 1 : 0) + (b.aboveSMA20 ? 1 : 0) + 
-                      (b.aboveSMA50 ? 1 : 0) + (b.aboveSMA100 ? 1 : 0);
-        return bScore - aScore;
+        // Sort by CCI (lower/more oversold is better for buying)
+        return a.cci - b.cci;
     });
     
     if (buyZoneStocks.length === 0) {
@@ -474,6 +694,7 @@ function updateRecommendedStocks() {
             </div>
             <div class="recommended-signals">
                 <span class="signal-badge success">📈 Supertrend UP</span>
+                <span class="cci-badge ${stock.cci < -100 ? 'oversold' : 'neutral'}">CCI: ${stock.cci.toFixed(0)}</span>
                 ${stock.aboveSMA10 ? '<span class="signal-badge success">✓ Above SMA 10</span>' : ''}
                 ${stock.aboveSMA20 ? '<span class="signal-badge success">✓ Above SMA 20</span>' : ''}
                 ${stock.aboveSMA50 ? '<span class="signal-badge success">✓ Above SMA 50</span>' : ''}
@@ -485,8 +706,71 @@ function updateRecommendedStocks() {
                     <span class="value-green">₹${stock.supertrend.toFixed(2)}</span>
                 </div>
                 <div class="info-row">
-                    <span>Distance from ST:</span>
-                    <span class="value-green">+${((stock.currentPrice - stock.supertrend) / stock.supertrend * 100).toFixed(2)}%</span>
+                    <span>CCI Status:</span>
+                    <span class="value-green">${stock.cci < -100 ? '🎯 Oversold - Good Entry' : stock.cci < 0 ? '📊 Recovering' : '✅ Bullish'}</span>
+                </div>
+            </div>
+            <div class="recommended-footer">
+                <span class="date-text">As of: ${stock.lastDate}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Function to identify and display recommended stocks in sell zone
+function updateSellZoneStocks() {
+    const sellZoneGrid = document.getElementById('sellZoneGrid');
+    
+    if (stocksData.length === 0) {
+        sellZoneGrid.innerHTML = '<div class="loading-small">No data available</div>';
+        return;
+    }
+    
+    // Criteria for sell zone:
+    // 1. Supertrend = DOWN (price below supertrend) OR
+    // 2. CCI > 100 (overbought) with weakening trend OR
+    // 3. Price below SMA 10 and 20
+    
+    const sellZoneStocks = stocksData.filter(stock => {
+        return (stock.supertrendTrend === 'down' && !stock.aboveSMA10) ||
+               (stock.cci > 100) ||
+               (!stock.aboveSMA10 && !stock.aboveSMA20);
+    }).sort((a, b) => {
+        // Sort by CCI (higher/more overbought is better for selling)
+        return b.cci - a.cci;
+    });
+    
+    if (sellZoneStocks.length === 0) {
+        sellZoneGrid.innerHTML = `
+            <div class="no-recommendations">
+                <p>✅ No stocks currently in sell zone</p>
+                <p class="small-text">All stocks showing strength - Hold positions</p>
+            </div>
+        `;
+        return;
+    }
+    
+    sellZoneGrid.innerHTML = sellZoneStocks.map(stock => `
+        <div class="sell-zone-card">
+            <div class="recommended-header">
+                <h3>${stock.name}</h3>
+                <span class="recommended-price">₹${stock.currentPrice.toFixed(2)}</span>
+            </div>
+            <div class="recommended-signals">
+                <span class="signal-badge ${stock.supertrendTrend === 'down' ? 'danger' : 'warning'}">📉 ${stock.supertrendTrend === 'down' ? 'Supertrend DOWN' : 'Weakening'}</span>
+                <span class="cci-badge ${stock.cci > 100 ? 'overbought' : 'neutral'}">CCI: ${stock.cci.toFixed(0)}</span>
+                ${!stock.aboveSMA10 ? '<span class="signal-badge danger">✗ Below SMA 10</span>' : ''}
+                ${!stock.aboveSMA20 ? '<span class="signal-badge danger">✗ Below SMA 20</span>' : ''}
+                ${!stock.aboveSMA50 ? '<span class="signal-badge danger">✗ Below SMA 50</span>' : ''}
+            </div>
+            <div class="recommended-info">
+                <div class="info-row">
+                    <span>Supertrend:</span>
+                    <span class="value-red">₹${stock.supertrend.toFixed(2)}</span>
+                </div>
+                <div class="info-row">
+                    <span>CCI Status:</span>
+                    <span class="value-red">${stock.cci > 100 ? '⚠️ Overbought - Exit' : stock.cci > 50 ? '📊 Weakening' : '📉 Bearish'}</span>
                 </div>
             </div>
             <div class="recommended-footer">

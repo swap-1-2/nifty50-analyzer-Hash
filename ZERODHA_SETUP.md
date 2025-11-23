@@ -46,7 +46,7 @@ After creating the app, you'll get:
    - Copy the `loginUrl` and open in browser
 
 3. Login and authorize:
-   - Login with your Zerodha credentials
+   - Login with your Zerodha credentials (https://kite.zerodha.com/connect/login?api_key=6ri96x7qvpkfh96c&v=3)
    - Authorize the app
    - You'll be redirected to: http://localhost:3000/callback?request_token=XXXXX&action=login&status=success
 
