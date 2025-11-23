@@ -1,23 +1,33 @@
 const axios = require('axios');
 const KiteConnect = require('kiteconnect').KiteConnect;
 
-// Debug: Log environment variables (without exposing full values)
+// Debug: Log environment variables (with partial masking for security)
+const apiKey = process.env.KITE_API_KEY;
+const apiSecret = process.env.KITE_API_SECRET;
+const accessToken = process.env.KITE_ACCESS_TOKEN;
+
 console.log('[NETLIFY FUNCTION] Environment check:', {
-    hasApiKey: !!process.env.KITE_API_KEY,
-    hasApiSecret: !!process.env.KITE_API_SECRET,
-    hasAccessToken: !!process.env.KITE_ACCESS_TOKEN,
-    apiKeyLength: process.env.KITE_API_KEY?.length,
-    accessTokenLength: process.env.KITE_ACCESS_TOKEN?.length
+    hasApiKey: !!apiKey,
+    hasApiSecret: !!apiSecret,
+    hasAccessToken: !!accessToken,
+    apiKeyLength: apiKey?.length,
+    apiKeyStart: apiKey?.substring(0, 4) + '****',
+    apiKeyEnd: '****' + apiKey?.substring(apiKey.length - 4),
+    accessTokenLength: accessToken?.length,
+    accessTokenStart: accessToken?.substring(0, 4) + '****',
+    accessTokenEnd: '****' + accessToken?.substring(accessToken.length - 4)
 });
 
 // Initialize Kite Connect
+console.log('[NETLIFY FUNCTION] Initializing KiteConnect with API key:', apiKey?.substring(0, 4) + '****');
 const kite = new KiteConnect({
-    api_key: process.env.KITE_API_KEY
+    api_key: apiKey
 });
 
 // Set access token
-if (process.env.KITE_ACCESS_TOKEN) {
-    kite.setAccessToken(process.env.KITE_ACCESS_TOKEN);
+if (accessToken) {
+    console.log('[NETLIFY FUNCTION] Setting access token:', accessToken?.substring(0, 4) + '****' + accessToken?.substring(accessToken.length - 4));
+    kite.setAccessToken(accessToken);
     console.log('[NETLIFY FUNCTION] Access token set successfully');
 } else {
     console.error('[NETLIFY FUNCTION] WARNING: No access token found in environment variables');
@@ -81,6 +91,8 @@ const instrumentTokens = {
 async function getKiteHistoricalData(symbol) {
     try {
         console.log(`[ZERODHA] Attempting to fetch ${symbol}`);
+        console.log(`[ZERODHA] Using API Key: ${apiKey?.substring(0, 4)}****${apiKey?.substring(apiKey.length - 4)}`);
+        console.log(`[ZERODHA] Using Access Token: ${accessToken?.substring(0, 4)}****${accessToken?.substring(accessToken.length - 4)}`);
         
         const instrumentToken = instrumentTokens[symbol];
         if (!instrumentToken) {
